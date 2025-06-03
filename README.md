@@ -23,6 +23,8 @@ channel = "stable-23_11"
 
 [debugger]
 support = false```
+
+
 [+] replit.nix:
 ```{ pkgs }: {
   deps = [
