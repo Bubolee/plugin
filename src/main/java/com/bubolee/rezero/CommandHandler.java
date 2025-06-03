@@ -32,7 +32,7 @@ public class CommandHandler implements CommandExecutor {
         String subCommand = args[0].toLowerCase();
         switch (subCommand) {
             case "setcheckpoint":
-                checkpointManager.setCheckpoint(player);
+                checkpointManager.setCheckpointForPlayer(player, player.getLocation()); // Sửa: Dùng setCheckpointForPlayer
                 player.sendMessage("§aCheckpoint set at your location!");
                 break;
             case "add":
