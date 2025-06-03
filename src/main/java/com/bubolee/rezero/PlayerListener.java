@@ -21,7 +21,12 @@ public class PlayerListener implements Listener {
     public void onPlayerDeath(PlayerDeathEvent event) {
         Player player = event.getEntity();
         if (checkpointManager.isWhitelisted(player)) {
-            checkpointManager.resetToCheckpoint(player, snapshotManager);
+            // Không dùng setCancelled, đặt HP về 1 và giữ vật phẩm/kinh nghiệm
+            event.setKeepInventory(true); // Giữ vật phẩm
+            event.setKeepLevel(true); // Giữ kinh nghiệm
+            player.setHealth(1.0); // Đặt HP về 1 để giữ sống
+            event.setDroppedExp(0); // Không drop kinh nghiệm
+            checkpointManager.resetToCheckpoint(player, snapshotManager); // Reset ngay lập tức
         }
     }
 
