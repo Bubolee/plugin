@@ -28,7 +28,9 @@ public class PlayerListener implements Listener {
     @EventHandler
     public void onPlayerChat(AsyncPlayerChatEvent event) {
         Player player = event.getPlayer();
-        if (checkpointManager.isWhitelisted(player) && event.getMessage().equalsIgnoreCase("return by death")) {
+        String message = event.getMessage().toLowerCase();
+        if (checkpointManager.isWhitelisted(player) && 
+            (message.contains("return by death") || message.contains("trở lại từ cái chết"))) {
             checkpointManager.resetToCheckpoint(player, snapshotManager);
         }
     }
