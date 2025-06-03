@@ -14,7 +14,7 @@ import java.util.*;
 
 public class CheckpointManager {
     private final ReZeroPlugin plugin;
-    private Map<String, Location> worldCheckpoints;
+    private Map<String, Map<UUID, Location>> worldCheckpoints;
     private Map<String, HashMap<UUID, PlayerState>> worldPlayerStates;
     private File playerDataFile;
     private FileConfiguration playerDataConfig;
@@ -42,25 +42,25 @@ public class CheckpointManager {
         }
     }
 
-    public void setCheckpoint(Player player) {
+    public void setCheckpointForPlayer(Player player, Location checkpointLocation) {
         String worldName = player.getWorld().getName();
-        Location checkpointLocation = player.getLocation();
-        worldCheckpoints.put(worldName, checkpointLocation);
+        worldCheckpoints.computeIfAbsent(worldName, k -> new HashMap<>()).put(player.getUniqueId(), checkpointLocation);
         worldLastCheckpointTimes.put(worldName, System.currentTimeMillis());
 
-        HashMap<UUID, PlayerState> playerStates = new HashMap<>();
+        HashMap<UUID, PlayerState> playerStates = worldPlayerStates.computeIfAbsent(worldName, k -> new HashMap<>());
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
             for (Player p : player.getWorld().getPlayers()) {
                 UUID uuid = p.getUniqueId();
-                playerStates.put(uuid, new PlayerState(p));
-                playerDataConfig.set(worldName + "." + uuid.toString() + ".location", checkpointLocation);
-                playerDataConfig.set(worldName + "." + uuid.toString() + ".health", p.getHealth());
-                playerDataConfig.set(worldName + "." + uuid.toString() + ".foodLevel", p.getFoodLevel());
-                playerDataConfig.set(worldName + "." + uuid.toString() + ".exp", p.getExp());
-                playerDataConfig.set(worldName + "." + uuid.toString() + ".inventory", p.getInventory().getContents());
-                playerDataConfig.set(worldName + "." + uuid.toString() + ".armor", p.getInventory().getArmorContents());
+                if (p.isOnline()) { // Lưu trạng thái cho tất cả người chơi online
+                    playerStates.put(uuid, new PlayerState(p));
+                    playerDataConfig.set(worldName + "." + uuid.toString() + ".location", checkpointLocation);
+                    playerDataConfig.set(worldName + "." + uuid.toString() + ".health", p.getHealth());
+                    playerDataConfig.set(worldName + "." + uuid.toString() + ".foodLevel", p.getFoodLevel());
+                    playerDataConfig.set(worldName + "." + uuid.toString() + ".exp", p.getExp());
+                    playerDataConfig.set(worldName + "." + uuid.toString() + ".inventory", p.getInventory().getContents());
+                    playerDataConfig.set(worldName + "." + uuid.toString() + ".armor", p.getInventory().getArmorContents());
+                }
             }
-            worldPlayerStates.put(worldName, playerStates);
             try {
                 playerDataConfig.save(playerDataFile);
             } catch (Exception e) {
@@ -79,48 +79,50 @@ public class CheckpointManager {
             @Override
             public void run() {
                 if (countdown > 0) {
-                    Location checkpointLoc = worldCheckpoints.get(worldName);
                     for (Player p : Bukkit.getOnlinePlayers()) {
                         if (p.getWorld().getName().equals(worldName)) {
                             p.sendMessage("§cReturn by Death in " + countdown + " seconds...");
-                            if (checkpointLoc != null) {
-                                p.spawnParticle(Particle.END_ROD, checkpointLoc, 100, 50, 50, 50, 0.05);
-                                p.spawnParticle(Particle.PORTAL, checkpointLoc, 100, 50, 50, 50, 0.1);
-                            }
+                            p.spawnParticle(Particle.END_ROD, triggerPlayer.getLocation(), 100, 50, 50, 50, 0.05);
+                            p.spawnParticle(Particle.PORTAL, triggerPlayer.getLocation(), 100, 50, 50, 50, 0.1);
                         }
                     }
                     countdown--;
                 } else {
-                    performReset(worldName, snapshotManager);
+                    performReset(worldName, snapshotManager, triggerPlayer.getUniqueId());
                     cancel();
                 }
             }
         }.runTaskTimer(plugin, 0L, 20L);
     }
 
-    private void performReset(String worldName, WorldSnapshotManager snapshotManager) {
-        // Reset vùng nhỏ 100x100x100
-        snapshotManager.restoreSnapshot(worldName);
-
-        // Reset tất cả người chơi trong world
+    private void performReset(String worldName, WorldSnapshotManager snapshotManager, UUID triggerUUID) {
+        // Reset trạng thái cho tất cả người chơi online
         World world = Bukkit.getWorld(worldName);
         for (Player p : world.getPlayers()) {
-            UUID uuid = p.getUniqueId();
-            Location loc = (Location) playerDataConfig.get(worldName + "." + uuid.toString() + ".location");
-            if (loc != null) p.teleport(loc);
-            p.setHealth(playerDataConfig.getDouble(worldName + "." + uuid.toString() + ".health", 20.0));
-            p.setFoodLevel(playerDataConfig.getInt(worldName + "." + uuid.toString() + ".foodLevel", 20));
-            p.setExp((float) playerDataConfig.getDouble(worldName + "." + uuid.toString() + ".exp", 0));
-            List<?> invList = playerDataConfig.getList(worldName + "." + uuid.toString() + ".inventory");
-            List<?> armorList = playerDataConfig.getList(worldName + "." + uuid.toString() + ".armor");
-            if (invList != null) p.getInventory().setContents(invList.toArray(new ItemStack[0]));
-            if (armorList != null) p.getInventory().setArmorContents(armorList.toArray(new ItemStack[0]));
-            p.sendTitle("Return by Death", "You have returned!", 10, 70, 20);
-            p.addPotionEffect(new PotionEffect(PotionEffectType.DARKNESS, 200, 1));
-            p.addPotionEffect(new PotionEffect(PotionEffectType.NAUSEA, 200, 1));
-            // Phát âm thanh từ file trong plugin
-            p.playSound(p.getLocation(), "rezero.reset", SoundCategory.MASTER, 1.0f, 1.0f);
+            if (p.isOnline()) {
+                Location checkpoint = worldCheckpoints.get(worldName).get(triggerUUID); // Dùng checkpoint của người kích hoạt
+                if (checkpoint != null) p.teleport(checkpoint);
+                p.setHealth(playerDataConfig.getDouble(worldName + "." + p.getUniqueId().toString() + ".health", 20.0));
+                p.setFoodLevel(playerDataConfig.getInt(worldName + "." + p.getUniqueId().toString() + ".foodLevel", 20));
+                p.setExp((float) playerDataConfig.getDouble(worldName + "." + p.getUniqueId().toString() + ".exp", 0));
+                List<?> invList = playerDataConfig.getList(worldName + "." + p.getUniqueId().toString() + ".inventory");
+                List<?> armorList = playerDataConfig.getList(worldName + "." + p.getUniqueId().toString() + ".armor");
+                if (invList != null) p.getInventory().setContents(invList.toArray(new ItemStack[0]));
+                if (armorList != null) p.getInventory().setArmorContents(armorList.toArray(new ItemStack[0]));
+                p.sendTitle("Return by Death", "You have returned!", 10, 70, 20);
+                p.addPotionEffect(new PotionEffect(PotionEffectType.DARKNESS, 200, 1));
+                p.addPotionEffect(new PotionEffect(PotionEffectType.NAUSEA, 200, 1));
+                p.playSound(p.getLocation(), "rezero.reset", SoundCategory.MASTER, 1.0f, 1.0f);
+            }
         }
+
+        // Reset địa hình chỉ quanh người trong whitelist online
+        List<UUID> onlineWhitelist = new ArrayList<>();
+        for (UUID uuid : whitelist) {
+            Player p = Bukkit.getPlayer(uuid);
+            if (p != null && p.isOnline()) onlineWhitelist.add(uuid);
+        }
+        snapshotManager.restoreSnapshots(worldName, onlineWhitelist);
     }
 
     public boolean isWhitelisted(Player player) {
@@ -138,7 +140,7 @@ public class CheckpointManager {
             plugin.getConfig().set("whitelist", uuidStrings);
             plugin.saveConfig();
             player.sendMessage("§aYou have been granted Return by Death!");
-            setCheckpoint(player);
+            setCheckpointForPlayer(player, player.getLocation());
         }
     }
 
