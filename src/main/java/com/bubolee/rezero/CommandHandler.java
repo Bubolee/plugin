@@ -5,6 +5,7 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
+
 import java.util.List;
 
 public class CommandHandler implements CommandExecutor {
@@ -18,57 +19,68 @@ public class CommandHandler implements CommandExecutor {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (!(sender instanceof Player)) {
-            sender.sendMessage("Only players can use this command!");
+        // Chỉ cho phép operator (OP)
+        if (!sender.isOp()) {
+            sender.sendMessage("§cThis command can only be used by operators!");
             return true;
         }
 
-        Player player = (Player) sender;
         if (args.length == 0) {
-            player.sendMessage("Usage: /rbd [setcheckpoint|add|remove|list|reload]");
+            sender.sendMessage("Usage: /rbd [setcheckpoint|add|remove|list|reload]");
             return true;
         }
 
         String subCommand = args[0].toLowerCase();
         switch (subCommand) {
             case "setcheckpoint":
-                checkpointManager.setCheckpointForPlayer(player, player.getLocation()); // Sửa: Dùng setCheckpointForPlayer
-                player.sendMessage("§aCheckpoint set at your location!");
+                if (args.length != 2) {
+                    sender.sendMessage("Usage: /rbd setcheckpoint <player>");
+                    return true;
+                }
+                Player target = Bukkit.getPlayer(args[1]);
+                if (target == null) {
+                    sender.sendMessage("§cPlayer not found!");
+                    return true;
+                }
+                checkpointManager.setCheckpointForPlayer(target, target.getLocation());
+                sender.sendMessage("§aCheckpoint set at " + target.getName() + "'s location!");
                 break;
             case "add":
                 if (args.length != 2) {
-                    player.sendMessage("Usage: /rbd add <player>");
+                    sender.sendMessage("Usage: /rbd add <player>");
                     return true;
                 }
                 Player targetAdd = Bukkit.getPlayer(args[1]);
                 if (targetAdd == null) {
-                    player.sendMessage("§cPlayer not found!");
+                    sender.sendMessage("§cPlayer not found!");
                     return true;
                 }
                 checkpointManager.addToWhitelist(targetAdd);
+                sender.sendMessage("§aAdded " + targetAdd.getName() + " to whitelist!");
                 break;
             case "remove":
                 if (args.length != 2) {
-                    player.sendMessage("Usage: /rbd remove <player>");
+                    sender.sendMessage("Usage: /rbd remove <player>");
                     return true;
                 }
                 Player targetRemove = Bukkit.getPlayer(args[1]);
                 if (targetRemove == null) {
-                    player.sendMessage("§cPlayer not found!");
+                    sender.sendMessage("§cPlayer not found!");
                     return true;
                 }
                 checkpointManager.removeFromWhitelist(targetRemove);
+                sender.sendMessage("§aRemoved " + targetRemove.getName() + " from whitelist!");
                 break;
             case "list":
                 List<String> whitelist = plugin.getConfig().getStringList("whitelist");
-                player.sendMessage("§aWhitelisted players: " + whitelist.toString());
+                sender.sendMessage("§aWhitelisted players: " + whitelist.toString());
                 break;
             case "reload":
                 plugin.reloadConfig();
-                player.sendMessage("§aConfig reloaded!");
+                sender.sendMessage("§aConfig reloaded!");
                 break;
             default:
-                player.sendMessage("Usage: /rbd [setcheckpoint|add|remove|list|reload]");
+                sender.sendMessage("Usage: /rbd [setcheckpoint|add|remove|list|reload]");
         }
         return true;
     }
