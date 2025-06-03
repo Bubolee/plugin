@@ -7,7 +7,6 @@ import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
-import org.bukkit.scheduler.BukkitRunnable;
 
 import java.io.File;
 import java.util.*;
@@ -51,7 +50,7 @@ public class CheckpointManager {
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
             for (Player p : player.getWorld().getPlayers()) {
                 UUID uuid = p.getUniqueId();
-                if (p.isOnline()) { // Lưu trạng thái cho tất cả người chơi online
+                if (p.isOnline()) {
                     playerStates.put(uuid, new PlayerState(p));
                     playerDataConfig.set(worldName + "." + uuid.toString() + ".location", checkpointLocation);
                     playerDataConfig.set(worldName + "." + uuid.toString() + ".health", p.getHealth());
@@ -73,34 +72,14 @@ public class CheckpointManager {
         String worldName = triggerPlayer.getWorld().getName();
         if (!worldCheckpoints.containsKey(worldName)) return;
 
-        new BukkitRunnable() {
-            int countdown = 5;
-
-            @Override
-            public void run() {
-                if (countdown > 0) {
-                    for (Player p : Bukkit.getOnlinePlayers()) {
-                        if (p.getWorld().getName().equals(worldName)) {
-                            p.sendMessage("§cReturn by Death in " + countdown + " seconds...");
-                            p.spawnParticle(Particle.END_ROD, triggerPlayer.getLocation(), 100, 50, 50, 50, 0.05);
-                            p.spawnParticle(Particle.PORTAL, triggerPlayer.getLocation(), 100, 50, 50, 50, 0.1);
-                        }
-                    }
-                    countdown--;
-                } else {
-                    performReset(worldName, snapshotManager, triggerPlayer.getUniqueId());
-                    cancel();
-                }
-            }
-        }.runTaskTimer(plugin, 0L, 20L);
+        performReset(worldName, snapshotManager, triggerPlayer.getUniqueId());
     }
 
     private void performReset(String worldName, WorldSnapshotManager snapshotManager, UUID triggerUUID) {
-        // Reset trạng thái cho tất cả người chơi online
         World world = Bukkit.getWorld(worldName);
         for (Player p : world.getPlayers()) {
             if (p.isOnline()) {
-                Location checkpoint = worldCheckpoints.get(worldName).get(triggerUUID); // Dùng checkpoint của người kích hoạt
+                Location checkpoint = worldCheckpoints.get(worldName).get(triggerUUID);
                 if (checkpoint != null) p.teleport(checkpoint);
                 p.setHealth(playerDataConfig.getDouble(worldName + "." + p.getUniqueId().toString() + ".health", 20.0));
                 p.setFoodLevel(playerDataConfig.getInt(worldName + "." + p.getUniqueId().toString() + ".foodLevel", 20));
@@ -112,11 +91,11 @@ public class CheckpointManager {
                 p.sendTitle("Return by Death", "You have returned!", 10, 70, 20);
                 p.addPotionEffect(new PotionEffect(PotionEffectType.DARKNESS, 200, 1));
                 p.addPotionEffect(new PotionEffect(PotionEffectType.NAUSEA, 200, 1));
-                p.playSound(p.getLocation(), "rezero.reset", SoundCategory.MASTER, 1.0f, 1.0f);
+                // Gọi trực tiếp playSound
+                p.getWorld().playSound(p.getLocation(), "rezero.reset", SoundCategory.MASTER, 1.0f, 1.0f);
             }
         }
 
-        // Reset địa hình chỉ quanh người trong whitelist online
         List<UUID> onlineWhitelist = new ArrayList<>();
         for (UUID uuid : whitelist) {
             Player p = Bukkit.getPlayer(uuid);
