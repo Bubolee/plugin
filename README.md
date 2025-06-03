@@ -1,4 +1,4 @@
-# Dành cho build trên replit:
+# For Replit:
 ## [+] .replit:
 ```compile = "mvn -B clean compile"
 run = "mvn -B clean package && echo 'Build completed! Find your plugin at target/ReZeroReturnByDeath-1.0-SNAPSHOT.jar'"
