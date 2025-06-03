@@ -1,0 +1,10 @@
+name: RBDplug
+version: 1.0
+main: com.bubolee.rezero.ReZeroPlugin
+api-version: 1.21
+commands:
+  rbd:
+    description: Return by Death commands
+    usage: /<command> [setcheckpoint|add|remove|list|reload]
+sounds:
+  rezero.reset: sounds/rezero_reset.ogg
