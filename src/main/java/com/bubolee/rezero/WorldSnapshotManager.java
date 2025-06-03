@@ -1,116 +1,87 @@
 package com.bubolee.rezero;
 
-import org.bukkit.*;
-import org.bukkit.block.Block;
-import org.bukkit.configuration.file.FileConfiguration;
-import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.Material;
+import org.bukkit.World;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
-import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.entity.Player;
 
-import java.io.*;
 import java.util.*;
 
 public class WorldSnapshotManager {
     private final ReZeroPlugin plugin;
-    private Map<String, Location> worldCheckpointLocations;
-    private Map<String, Map<Location, Material>> blockSnapshots; // Lưu block trong vùng
-    private Map<String, List<EntityData>> entitySnapshots; // Lưu mobs trong world
-    private File snapshotFile;
-    private FileConfiguration snapshotConfig;
+    private Map<String, Map<UUID, Map<Location, Material>>> worldBlockSnapshots;
+    private Map<String, List<EntityData>> worldEntitySnapshots;
 
     public WorldSnapshotManager(ReZeroPlugin plugin) {
         this.plugin = plugin;
-        this.worldCheckpointLocations = new HashMap<>();
-        this.blockSnapshots = new HashMap<>();
-        this.entitySnapshots = new HashMap<>();
-        this.snapshotFile = new File(plugin.getDataFolder(), "snapshots.yml");
-        if (!snapshotFile.exists()) {
-            plugin.saveResource("snapshots.yml", false);
-        }
-        this.snapshotConfig = YamlConfiguration.loadConfiguration(snapshotFile);
+        this.worldBlockSnapshots = new HashMap<>();
+        this.worldEntitySnapshots = new HashMap<>();
     }
 
-    public void takeSnapshot(Location loc) {
-        String worldName = loc.getWorld().getName();
-        worldCheckpointLocations.put(worldName, loc);
+    public void takeSnapshotForPlayer(Player player, Location checkpoint) {
+        String worldName = player.getWorld().getName();
+        World world = player.getWorld();
+        UUID uuid = player.getUniqueId();
 
-        // Snapshot vùng 100x100x100
         Map<Location, Material> blockData = new HashMap<>();
-        World world = loc.getWorld();
-        int centerX = loc.getBlockX(), centerY = loc.getBlockY(), centerZ = loc.getBlockZ();
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                for (int x = centerX - 50; x <= centerX + 50; x++) {
-                    for (int y = Math.max(world.getMinHeight(), centerY - 50); y <= Math.min(world.getMaxHeight() - 1, centerY + 50); y++) {
-                        for (int z = centerZ - 50; z <= centerZ + 50; z++) {
-                            Location blockLoc = new Location(world, x, y, z);
-                            blockData.put(blockLoc, world.getBlockAt(x, y, z).getType());
-                            snapshotConfig.set(worldName + ".blocks." + x + "_" + y + "_" + z + ".material", world.getBlockAt(x, y, z).getType().toString());
-                        }
-                    }
-                }
-                blockSnapshots.put(worldName, blockData);
+        int centerX = checkpoint.getBlockX(), centerY = checkpoint.getBlockY(), centerZ = checkpoint.getBlockZ();
 
-                // Snapshot mobs trong world
-                List<EntityData> entities = new ArrayList<>();
-                for (Entity entity : world.getEntities()) {
-                    if (entity instanceof LivingEntity && entity.getType() != EntityType.PLAYER) {
-                        entities.add(new EntityData(entity.getType(), entity.getLocation()));
-                        snapshotConfig.set(worldName + ".entities." + entity.getUniqueId().toString() + ".type", entity.getType().toString());
-                        snapshotConfig.set(worldName + ".entities." + entity.getUniqueId().toString() + ".location", entity.getLocation());
-                    }
+        for (int x = centerX - 50; x <= centerX + 50; x++) {
+            for (int y = Math.max(world.getMinHeight(), centerY - 50); y <= Math.min(world.getMaxHeight() - 1, centerY + 50); y++) {
+                for (int z = centerZ - 50; z <= centerZ + 50; z++) {
+                    Location blockLoc = new Location(world, x, y, z);
+                    blockData.put(blockLoc, world.getBlockAt(x, y, z).getType());
                 }
-                entitySnapshots.put(worldName, entities);
-
-                try {
-                    snapshotConfig.save(snapshotFile);
-                } catch (Exception e) {
-                    plugin.getLogger().warning("Failed to save snapshot: " + e.getMessage());
-                }
-                plugin.getLogger().info("Snapshot taken for 100x100x100 region in world " + worldName);
             }
-        }.runTaskAsynchronously(plugin);
+        }
+
+        worldBlockSnapshots.computeIfAbsent(worldName, k -> new HashMap<>()).put(uuid, blockData);
+
+        if (!worldEntitySnapshots.containsKey(worldName)) {
+            List<EntityData> entities = new ArrayList<>();
+            for (Entity entity : world.getEntities()) {
+                if (entity instanceof LivingEntity && entity.getType() != EntityType.PLAYER) {
+                    entities.add(new EntityData(entity.getType(), entity.getLocation()));
+                }
+            }
+            worldEntitySnapshots.put(worldName, entities);
+        }
     }
 
-    public void restoreSnapshot(String worldName) {
-        Location checkpointLoc = worldCheckpointLocations.get(worldName);
-        if (checkpointLoc == null) return;
+    public void restoreSnapshots(String worldName, List<UUID> whitelist) {
+        World world = Bukkit.getWorld(worldName);
+        if (world == null) return;
 
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                // Restore vùng block
-                Map<Location, Material> blockData = blockSnapshots.get(worldName);
+        Map<Location, Material> blocksToRestore = new HashMap<>();
+        for (UUID uuid : whitelist) {
+            Player player = Bukkit.getPlayer(uuid);
+            if (player != null && player.isOnline()) {
+                Map<Location, Material> blockData = worldBlockSnapshots.getOrDefault(worldName, new HashMap<>()).get(uuid);
                 if (blockData != null) {
-                    for (Map.Entry<Location, Material> entry : blockData.entrySet()) {
-                        Location loc = entry.getKey();
-                        Block block = loc.getBlock();
-                        block.setType(entry.getValue());
-                    }
+                    blocksToRestore.putAll(blockData);
                 }
-
-                // Xóa mobs hiện tại (trừ người chơi)
-                World world = Bukkit.getWorld(worldName);
-                for (Entity entity : world.getEntities()) {
-                    if (entity instanceof LivingEntity && entity.getType() != EntityType.PLAYER) {
-                        entity.remove();
-                    }
-                }
-
-                // Restore mobs
-                List<EntityData> entities = entitySnapshots.get(worldName);
-                if (entities != null) {
-                    for (EntityData data : entities) {
-                        world.spawnEntity(data.location, data.type);
-                    }
-                }
-
-                plugin.getLogger().info("Restored 100x100x100 region and entities in world " + worldName);
             }
-        }.runTaskAsynchronously(plugin);
+        }
+
+        for (Map.Entry<Location, Material> entry : blocksToRestore.entrySet()) {
+            entry.getKey().getBlock().setType(entry.getValue());
+        }
+
+        List<EntityData> entities = worldEntitySnapshots.get(worldName);
+        if (entities != null) {
+            for (Entity entity : world.getEntities()) {
+                if (entity instanceof LivingEntity && entity.getType() != EntityType.PLAYER) {
+                    entity.remove();
+                }
+            }
+            for (EntityData data : entities) {
+                world.spawnEntity(data.location, data.type);
+            }
+        }
     }
 }
 
