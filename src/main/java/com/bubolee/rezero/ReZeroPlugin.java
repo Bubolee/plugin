@@ -45,10 +45,12 @@ public class ReZeroPlugin extends JavaPlugin {
             public void run() {
                 List<String> whitelist = getConfig().getStringList("whitelist");
                 if (whitelist.isEmpty()) {
-                    getLogger().info("No players in whitelist, skipping auto-checkpoint.");
+                    getLogger().info("No players in whitelist, skipping auto-checkpoint."); // Thông báo panel
+                    scheduleNextRun();
                     return;
                 }
 
+                boolean checkpointSet = false;
                 for (String uuidStr : whitelist) {
                     UUID uuid = UUID.fromString(uuidStr);
                     Player player = Bukkit.getPlayer(uuid);
@@ -56,11 +58,22 @@ public class ReZeroPlugin extends JavaPlugin {
                         checkpointManager.setCheckpointForPlayer(player, player.getLocation());
                         snapshotManager.takeSnapshotForPlayer(player, player.getLocation());
                         player.sendMessage("§eA new checkpoint has been set at your location (auto-set).");
+                        checkpointSet = true;
                     }
                 }
 
-                long nextRunTicks = (random.nextInt(120) + 60) * 20L; // 60-180 giây
-                runTaskLater(ReZeroPlugin.this, nextRunTicks); // Sửa: Dùng ReZeroPlugin.this
+                if (!checkpointSet) {
+                    getLogger().info("No whitelisted players online, skipping checkpoint."); // Thông báo panel
+                } else {
+                    getLogger().info("Auto-checkpoint set for online whitelisted players."); // Thông báo panel
+                }
+
+                scheduleNextRun();
+            }
+
+            private void scheduleNextRun() {
+                long nextRunTicks = (random.nextInt(60) + 30) * 20L; // 30-90 giây
+                runTaskLater(ReZeroPlugin.this, nextRunTicks);
             }
         }.runTaskLater(this, 20L);
     }
