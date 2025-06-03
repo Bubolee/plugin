@@ -6,6 +6,7 @@ import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
+import org.bukkit.entity.Item;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 
@@ -13,7 +14,7 @@ import java.util.*;
 
 public class WorldSnapshotManager {
     private final ReZeroPlugin plugin;
-    private Map<String, Map<UUID, Map<Location, Material>>> worldBlockSnapshots;
+    private Map<String, Map<Location, Material>> worldBlockSnapshots; // Lưu toàn bộ map
     private Map<String, List<EntityData>> worldEntitySnapshots;
 
     public WorldSnapshotManager(ReZeroPlugin plugin) {
@@ -25,52 +26,54 @@ public class WorldSnapshotManager {
     public void takeSnapshotForPlayer(Player player, Location checkpoint) {
         String worldName = player.getWorld().getName();
         World world = player.getWorld();
-        UUID uuid = player.getUniqueId();
 
         Map<Location, Material> blockData = new HashMap<>();
-        int centerX = checkpoint.getBlockX(), centerY = checkpoint.getBlockY(), centerZ = checkpoint.getBlockZ();
-
-        for (int x = centerX - 50; x <= centerX + 50; x++) {
-            for (int y = Math.max(world.getMinHeight(), centerY - 50); y <= Math.min(world.getMaxHeight() - 1, centerY + 50); y++) {
-                for (int z = centerZ - 50; z <= centerZ + 50; z++) {
+        // Lưu toàn bộ block trong world
+        for (int x = world.getMinHeight(); x <= world.getMaxHeight() - 1; x++) {
+            for (int z = -30000000; z <= 30000000; z += 16) { // Giới hạn để tránh quá tải
+                for (int y = -30000000; y <= 30000000; y += 16) {
                     Location blockLoc = new Location(world, x, y, z);
-                    blockData.put(blockLoc, world.getBlockAt(x, y, z).getType());
+                    if (world.isChunkLoaded(x >> 4, z >> 4)) {
+                        blockData.put(blockLoc, world.getBlockAt(x, y, z).getType());
+                    }
                 }
             }
         }
 
-        worldBlockSnapshots.computeIfAbsent(worldName, k -> new HashMap<>()).put(uuid, blockData);
+        worldBlockSnapshots.put(worldName, blockData);
 
-        if (!worldEntitySnapshots.containsKey(worldName)) {
-            List<EntityData> entities = new ArrayList<>();
-            for (Entity entity : world.getEntities()) {
-                if (entity instanceof LivingEntity && entity.getType() != EntityType.PLAYER) {
-                    entities.add(new EntityData(entity.getType(), entity.getLocation()));
-                }
+        // Lưu mobs
+        List<EntityData> entities = new ArrayList<>();
+        for (Entity entity : world.getEntities()) {
+            if (entity instanceof LivingEntity && entity.getType() != EntityType.PLAYER) {
+                entities.add(new EntityData(entity.getType(), entity.getLocation()));
             }
-            worldEntitySnapshots.put(worldName, entities);
         }
+        worldEntitySnapshots.put(worldName, entities);
     }
 
     public void restoreSnapshots(String worldName, List<UUID> whitelist) {
         World world = Bukkit.getWorld(worldName);
         if (world == null) return;
 
-        Map<Location, Material> blocksToRestore = new HashMap<>();
-        for (UUID uuid : whitelist) {
-            Player player = Bukkit.getPlayer(uuid);
-            if (player != null && player.isOnline()) {
-                Map<Location, Material> blockData = worldBlockSnapshots.getOrDefault(worldName, new HashMap<>()).get(uuid);
-                if (blockData != null) {
-                    blocksToRestore.putAll(blockData);
-                }
+        // Xóa toàn bộ vật phẩm lơ lửng
+        for (Entity entity : world.getEntities()) {
+            if (entity instanceof Item) {
+                entity.remove();
             }
         }
 
+        // Reset toàn bộ block
+        Map<Location, Material> blocksToRestore = worldBlockSnapshots.getOrDefault(worldName, new HashMap<>());
         for (Map.Entry<Location, Material> entry : blocksToRestore.entrySet()) {
-            entry.getKey().getBlock().setType(entry.getValue());
+            Location loc = entry.getKey();
+            Material material = entry.getValue();
+            if (world.isChunkLoaded(loc.getBlockX() >> 4, loc.getBlockZ() >> 4)) {
+                loc.getBlock().setType(material);
+            }
         }
 
+        // Reset mobs
         List<EntityData> entities = worldEntitySnapshots.get(worldName);
         if (entities != null) {
             for (Entity entity : world.getEntities()) {
@@ -79,7 +82,9 @@ public class WorldSnapshotManager {
                 }
             }
             for (EntityData data : entities) {
-                world.spawnEntity(data.location, data.type);
+                if (world.isChunkLoaded(data.location.getBlockX() >> 4, data.location.getBlockZ() >> 4)) {
+                    world.spawnEntity(data.location, data.type);
+                }
             }
         }
     }
