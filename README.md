@@ -1,5 +1,5 @@
 # Dành cho build trên replit:
-[+] .replit:
+## [+] .replit:
 ```compile = "mvn -B clean compile"
 run = "mvn -B clean package && echo 'Build completed! Find your plugin at target/ReZeroReturnByDeath-1.0-SNAPSHOT.jar'"
 
@@ -22,10 +22,11 @@ start = "jdt-language-server"
 channel = "stable-23_11"
 
 [debugger]
-support = false```
+support = false
+```
 
 
-[+] replit.nix:
+## [+] replit.nix:
 ```{ pkgs }: {
   deps = [
     pkgs.jdk21
